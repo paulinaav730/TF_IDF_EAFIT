@@ -1,174 +1,192 @@
+
+import re
 import streamlit as st
+import pandas as pd
+
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import pandas as pd
-import re
 from nltk.stem import SnowballStemmer
 
 
 # ==========================================================
-# CONFIGURACIÓN DE LA PÁGINA
+# CONFIGURACIÓN
 # ==========================================================
 
 st.set_page_config(
-    page_title="TF-IDF Search",
+    page_title="NARANJA | Buscador inteligente",
     page_icon="🔎",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-
 # ==========================================================
-# ESTILOS
+# ESTILOS PERSONALIZADOS
 # ==========================================================
 
 st.markdown("""
 <style>
-
-    /* Fondo */
     .stApp {
-        background-color: #f7f9fc;
+        background-color: #FFF8F1;
     }
 
-    /* Encabezado */
-    .titulo {
-        text-align: center;
-        font-size: 42px;
-        font-weight: 700;
-        color: #1f2937;
+    .block-container {
+        max-width: 1250px;
+        padding-top: 2rem;
+        padding-bottom: 3rem;
+    }
+
+    [data-testid="stSidebar"] {
+        background-color: #FFEBDD;
+        border-right: 1px solid #F3D3BD;
+    }
+
+    .hero {
+        background: linear-gradient(135deg, #F58A45, #D95522);
+        padding: 34px 30px;
+        border-radius: 24px;
+        color: white;
+        margin-bottom: 24px;
+    }
+
+    .hero h1 {
+        color: white;
+        font-size: 40px;
+        margin: 0;
+    }
+
+    .hero p {
+        color: white;
+        font-size: 17px;
         margin-top: 10px;
-        margin-bottom: 5px;
+        margin-bottom: 0;
     }
 
-    .subtitulo {
-        text-align: center;
-        font-size: 18px;
-        color: #667085;
-        margin-bottom: 30px;
-    }
-
-    /* Tarjetas */
-    .card {
-        background-color: white;
-        border-radius: 16px;
-        padding: 24px;
-        border: 1px solid #e4e7ec;
-        margin-bottom: 20px;
-        box-shadow: 0px 3px 12px rgba(0, 0, 0, 0.05);
-    }
-
-    /* Resultado */
-    .resultado {
-        background-color: white;
-        border-radius: 16px;
-        padding: 28px;
-        border: 1px solid #d9e2ec;
-        margin-top: 20px;
-        box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.06);
-    }
-
-    .resultado-titulo {
-        color: #1f2937;
-        font-size: 24px;
+    .section-label {
+        color: #B74B20;
+        font-size: 13px;
         font-weight: 700;
+        letter-spacing: 2px;
+        text-transform: uppercase;
     }
 
-    .relevancia {
-        font-size: 32px;
-        font-weight: 700;
+    .info-card {
+        background-color: #FFFFFF;
+        border: 1px solid #F1D8C7;
+        border-radius: 17px;
+        padding: 20px;
+        margin-bottom: 12px;
     }
 
-    /* Texto pequeño */
-    .descripcion {
-        color: #667085;
-        font-size: 16px;
-        line-height: 1.6;
+    .info-card h3 {
+        color: #873C1C;
+        margin-top: 0;
     }
 
-    /* Footer */
+    .muted {
+        color: #77675D;
+        line-height: 1.7;
+    }
+
+    .result-card {
+        background-color: white;
+        border: 1px solid #F0D4C1;
+        border-left: 6px solid #F07836;
+        border-radius: 16px;
+        padding: 23px;
+        margin: 14px 0;
+    }
+
+    .result-card h3 {
+        color: #8C451D;
+        margin-top: 0;
+    }
+
+    div.stButton > button {
+        border-radius: 11px;
+        font-weight: 600;
+        min-height: 42px;
+    }
+
+    div.stButton > button[kind="primary"] {
+        background-color: #F07836;
+        border-color: #F07836;
+        color: white;
+    }
+
+    div.stButton > button[kind="primary"]:hover {
+        background-color: #D95D23;
+        border-color: #D95D23;
+        color: white;
+    }
+
+    div[data-testid="stMetric"] {
+        background-color: white;
+        border: 1px solid #F1D8C7;
+        border-radius: 15px;
+        padding: 15px;
+    }
+
     .footer {
         text-align: center;
-        color: #98a2b3;
-        padding: 30px;
-        margin-top: 30px;
+        color: #8F8177;
+        padding: 24px;
+        margin-top: 35px;
+        border-top: 1px solid #EAD6C8;
     }
-
 </style>
 """, unsafe_allow_html=True)
 
 
 # ==========================================================
-# ENCABEZADO
+# FUNCIONES DE PROCESAMIENTO
 # ==========================================================
 
-st.markdown(
-    '<div class="titulo">🔎 TF-IDF Search</div>',
-    unsafe_allow_html=True
-)
-
-st.markdown(
-    '<div class="subtitulo">'
-    'Encuentra el documento más relacionado con tu pregunta'
-    '</div>',
-    unsafe_allow_html=True
-)
+stemmer = SnowballStemmer("spanish")
 
 
-# ==========================================================
-# SIDEBAR
-# ==========================================================
+def tokenize_and_stem(text):
+    """Normaliza, separa y reduce las palabras en español."""
 
-with st.sidebar:
+    text = text.lower()
 
-    st.header("🛠️ Herramientas")
+    # Conserva letras españolas y elimina signos y números.
+    text = re.sub(r"[^a-záéíóúüñ\s]", " ", text)
 
-    st.write(
-        "Configura tu búsqueda y administra la base de conocimiento."
-    )
+    tokens = [
+        token
+        for token in text.split()
+        if len(token) > 1
+    ]
 
-    st.divider()
+    return [stemmer.stem(token) for token in tokens]
 
-    st.subheader("📚 ¿Qué utilizamos?")
 
-    st.write("""
-    **TF-IDF**
+def split_documents(text):
+    """Cada línea no vacía representa un documento."""
 
-    Permite identificar la importancia de las palabras
-    dentro de los documentos.
+    return [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip()
+    ]
 
-    **Stemming**
 
-    Reduce las palabras a una forma básica.
+def create_vectorizer():
+    """Crea el vectorizador TF-IDF con stemming."""
 
-    **Similitud coseno**
-
-    Permite comparar la pregunta con los documentos
-    y encontrar el más relacionado.
-    """)
-
-    st.divider()
-
-    st.info(
-        "💡 Cada salto de línea representa un documento independiente."
+    return TfidfVectorizer(
+        tokenizer=tokenize_and_stem,
+        token_pattern=None,
+        lowercase=False,
+        min_df=1
     )
 
 
 # ==========================================================
-# BASE DE CONOCIMIENTO
+# BASE DE CONOCIMIENTO DE EJEMPLO
 # ==========================================================
 
-st.markdown(
-    "### 📚 Base de conocimiento"
-)
-
-st.markdown(
-    '<div class="descripcion">'
-    'Escribe tus documentos. Cada línea será procesada como un documento independiente.'
-    '</div>',
-    unsafe_allow_html=True
-)
-
-
-default_docs = """La fotosíntesis es el proceso mediante el cual las plantas transforman la energía luminosa en energía química, liberando oxígeno al ambiente.
+DEFAULT_DOCS = """La fotosíntesis es el proceso mediante el cual las plantas transforman la energía luminosa en energía química y liberan oxígeno al ambiente.
 El Coliseo de Roma fue construido en el siglo I y es un anfiteatro famoso por su arquitectura y sus túneles.
 El telescopio espacial James Webb utiliza sensores infrarrojos para observar galaxias distantes y estudiar el universo.
 La cocina japonesa tradicional utiliza ingredientes de temporada, sabores equilibrados y técnicas precisas de preparación.
@@ -178,88 +196,7 @@ La programación permite desarrollar aplicaciones y soluciones para diferentes n
 La educación universitaria combina conocimientos teóricos y prácticos para preparar a los estudiantes para el mundo profesional."""
 
 
-# ==========================================================
-# CARGAR ARCHIVO TXT
-# ==========================================================
-
-archivo = st.file_uploader(
-    "📤 Sube tu base de conocimiento (.txt)",
-    type=["txt"]
-)
-
-
-if archivo is not None:
-
-    try:
-
-        contenido = archivo.read().decode("utf-8")
-
-        documents = [
-            d.strip()
-            for d in contenido.split("\n")
-            if d.strip()
-        ]
-
-        st.success(
-            f"✅ Base cargada correctamente: {len(documents)} documentos."
-        )
-
-    except Exception:
-
-        st.error(
-            "No fue posible leer el archivo. "
-            "Verifica que sea un archivo TXT en formato UTF-8."
-        )
-
-        documents = []
-
-else:
-
-    documents = [
-        d.strip()
-        for d in default_docs.split("\n")
-        if d.strip()
-    ]
-
-    st.info(
-        "Estás utilizando la base de conocimiento de ejemplo."
-    )
-
-
-# ==========================================================
-# MOSTRAR BASE DE CONOCIMIENTO
-# ==========================================================
-
-with st.expander("📄 Ver documentos de la base"):
-
-    for i, document in enumerate(documents):
-
-        st.write(
-            f"**Documento {i + 1}:** {document}"
-        )
-
-
-# ==========================================================
-# PREGUNTA
-# ==========================================================
-
-st.markdown(
-    "### 🔍 Búsqueda inteligente"
-)
-
-st.markdown(
-    '<div class="descripcion">'
-    'Escribe una pregunta y el sistema encontrará el documento más relevante.'
-    '</div>',
-    unsafe_allow_html=True
-)
-
-
-# ==========================================================
-# PREGUNTAS SUGERIDAS
-# ==========================================================
-
-preguntas = [
+PREGUNTAS = [
     "¿Cómo funciona la fotosíntesis?",
     "¿Cuándo se construyó el Coliseo?",
     "¿Qué estudia el telescopio James Webb?",
@@ -269,426 +206,529 @@ preguntas = [
 ]
 
 
-if "pregunta_seleccionada" not in st.session_state:
+# ==========================================================
+# ENCABEZADO
+# ==========================================================
 
-    st.session_state.pregunta_seleccionada = ""
+st.markdown("""
+<div class="hero">
+    <div class="section-label" style="color:#FFE1CA;">
+        PROCESAMIENTO DE LENGUAJE NATURAL
+    </div>
+    <h1>🔎 NARANJA Search</h1>
+    <p>
+        Encuentra conexiones entre tus preguntas y tus documentos.
+        Busca información de forma inteligente con TF-IDF.
+    </p>
+</div>
+""", unsafe_allow_html=True)
 
 
-col1, col2 = st.columns([3, 1])
+# ==========================================================
+# BARRA LATERAL
+# ==========================================================
 
+with st.sidebar:
 
-with col1:
+    st.markdown("## 🍊 NARANJA Search")
 
-    question = st.text_input(
-        "Haz tu pregunta:",
-        value=st.session_state.pregunta_seleccionada,
-        placeholder="Ejemplo: ¿Qué estudia el telescopio James Webb?",
-        key="pregunta"
+    st.write(
+        "Tu espacio para explorar información y encontrar "
+        "los documentos más relacionados con cada pregunta."
     )
 
+    st.divider()
 
-with col2:
+    st.markdown("### 🧠 ¿Cómo funciona?")
 
-    st.markdown("#### 💡 Preguntas sugeridas")
+    st.markdown("""
+    **1. TF-IDF**
 
-    for i, pregunta in enumerate(preguntas):
+    Calcula la importancia de las palabras.
 
-        if st.button(
-            pregunta,
-            key=f"sugerida_{i}",
-            use_container_width=True
-        ):
+    **2. Stemming**
 
-            st.session_state.pregunta_seleccionada = pregunta
+    Reduce las palabras a sus raíces aproximadas.
 
-            st.rerun()
+    **3. Similitud coseno**
+
+    Compara la pregunta con cada documento.
+
+    **4. Ranking**
+
+    Ordena los documentos por similitud.
+    """)
+
+    st.divider()
+
+    st.markdown("### 📌 Recomendaciones")
+
+    st.caption(
+        "Cada línea del archivo TXT se interpreta como un documento "
+        "independiente. Escribe preguntas con palabras relacionadas "
+        "con la información que buscas."
+    )
+
+    st.divider()
+
+    st.caption("Proyecto académico · Procesamiento de Lenguaje Natural")
 
 
 # ==========================================================
-# BOTÓN DE BÚSQUEDA
+# CARGA DE DOCUMENTOS
 # ==========================================================
+
+st.markdown('<p class="section-label">01 — EXPLORA</p>',
+            unsafe_allow_html=True)
+
+st.header("📚 Tu base de conocimiento")
+
+st.markdown(
+    '<p class="muted">Carga tu propia colección de textos o '
+    'comienza con los documentos de ejemplo.</p>',
+    unsafe_allow_html=True
+)
+
+archivo = st.file_uploader(
+    "Importa tus documentos (.txt)",
+    type=["txt"],
+    help="Cada línea del archivo representa un documento."
+)
+
+if archivo is not None:
+
+    try:
+        contenido = archivo.getvalue().decode("utf-8-sig")
+        documents = split_documents(contenido)
+
+        if not documents:
+            st.warning(
+                "El archivo no contiene líneas con texto. "
+                "Prueba con otro archivo."
+            )
+
+    except UnicodeDecodeError:
+        st.error(
+            "No se pudo leer el archivo. Guárdalo como TXT "
+            "codificado en UTF-8."
+        )
+        documents = []
+
+else:
+    documents = split_documents(DEFAULT_DOCS)
+    st.info("Estás utilizando la base de conocimiento de ejemplo.")
+
+# Eliminar documentos que no contengan palabras procesables.
+documents_validos = [
+    doc for doc in documents
+    if tokenize_and_stem(doc)
+]
+
+if documents and not documents_validos:
+    st.warning(
+        "No encontramos palabras que puedan procesarse en los "
+        "documentos. Revisa el contenido del archivo."
+    )
+
+documents = documents_validos
+
+col_a, col_b = st.columns(2)
+
+with col_a:
+    st.metric("📄 Documentos disponibles", len(documents))
+
+with col_b:
+    st.metric(
+        "🔤 Palabras únicas",
+        len({
+            palabra
+            for doc in documents
+            for palabra in tokenize_and_stem(doc)
+        })
+    )
+
+with st.expander("👀 Explorar documentos"):
+
+    if documents:
+        for i, doc in enumerate(documents):
+            st.markdown(f"**Documento {i + 1}**")
+            st.write(doc)
+            st.divider()
+    else:
+        st.write("No hay documentos disponibles.")
+
+
+# ==========================================================
+# BÚSQUEDA INTELIGENTE
+# ==========================================================
+
+st.markdown("---")
+
+st.markdown(
+    '<p class="section-label">02 — BUSCA</p>',
+    unsafe_allow_html=True
+)
+
+st.header("🔍 ¿Qué información necesitas?")
+
+st.write(
+    "Escribe una pregunta o selecciona un ejemplo. "
+    "El sistema comparará tu consulta con los documentos."
+)
+
+# Inicializar estado antes de mostrar el campo de texto.
+if "pregunta" not in st.session_state:
+    st.session_state["pregunta"] = ""
+
+if "ultima_busqueda" not in st.session_state:
+    st.session_state["ultima_busqueda"] = None
+
+with st.expander("💡 Probar preguntas sugeridas"):
+
+    pregunta_ejemplo = st.selectbox(
+        "Selecciona una pregunta",
+        PREGUNTAS,
+        key="selector_pregunta"
+    )
+
+    if st.button(
+        "Usar esta pregunta",
+        key="usar_pregunta",
+        use_container_width=True
+    ):
+        st.session_state["pregunta"] = pregunta_ejemplo
+        st.rerun()
+
+question = st.text_input(
+    "Tu pregunta",
+    key="pregunta",
+    placeholder="Ej.: ¿Qué permite hacer la inteligencia artificial?"
+)
 
 buscar = st.button(
-    "🔎 Ejecutar búsqueda",
+    "🔎 Buscar documentos",
     type="primary",
     use_container_width=True
 )
 
 
 # ==========================================================
-# FUNCIÓN DE TOKENIZACIÓN Y STEMMING
-# ==========================================================
-
-stemmer = SnowballStemmer("spanish")
-
-
-def tokenize_and_stem(text):
-
-    # Convertir a minúsculas
-
-    text = text.lower()
-
-    # Mantener letras españolas
-
-    text = re.sub(
-        r'[^a-záéíóúüñ\s]',
-        ' ',
-        text
-    )
-
-    # Separar palabras
-
-    tokens = [
-        t
-        for t in text.split()
-        if len(t) > 1
-    ]
-
-    # Aplicar stemming
-
-    stems = [
-        stemmer.stem(t)
-        for t in tokens
-    ]
-
-    return stems
-
-
-# ==========================================================
-# PROCESAMIENTO
+# PROCESAMIENTO TF-IDF
 # ==========================================================
 
 if buscar:
 
-    if len(documents) < 1:
-
+    if not documents:
         st.error(
-            "⚠️ Debes ingresar al menos un documento."
+            "No hay documentos válidos. Carga un archivo TXT "
+            "con contenido o utiliza una base de ejemplo."
         )
 
     elif not question.strip():
+        st.warning("Escribe una pregunta antes de buscar.")
 
-        st.error(
-            "⚠️ Escribe una pregunta para realizar la búsqueda."
+    else:
+        try:
+            vectorizer = create_vectorizer()
+
+            # Crear la matriz TF-IDF de los documentos.
+            X = vectorizer.fit_transform(documents)
+
+            # Convertir la pregunta al mismo espacio vectorial.
+            question_vec = vectorizer.transform([question])
+
+            # Comparar la pregunta con todos los documentos.
+            similarities = cosine_similarity(
+                question_vec,
+                X
+            ).flatten()
+
+            # Ordenar de mayor a menor similitud.
+            ranking = similarities.argsort()[::-1]
+
+            st.session_state["ultima_busqueda"] = {
+                "question": question,
+                "documents": documents,
+                "similarities": similarities.tolist(),
+                "ranking": ranking.tolist(),
+                "matrix": X.toarray().tolist(),
+                "vocabulary": vectorizer.get_feature_names_out().tolist()
+            }
+
+        except ValueError as error:
+            st.error(
+                "No fue posible procesar los documentos. "
+                "Revisa que contengan texto válido."
+            )
+            st.caption(f"Detalle técnico: {error}")
+
+        except Exception as error:
+            st.error("Ocurrió un error durante la búsqueda.")
+            st.caption(f"Detalle técnico: {error}")
+
+
+# ==========================================================
+# PRESENTACIÓN DE RESULTADOS
+# ==========================================================
+
+data = st.session_state["ultima_busqueda"]
+
+if data is not None:
+
+    st.markdown("---")
+
+    st.markdown(
+        '<p class="section-label">03 — DESCUBRE</p>',
+        unsafe_allow_html=True
+    )
+
+    st.header("🎯 Resultados de tu búsqueda")
+
+    st.write(f"**Pregunta:** {data['question']}")
+
+    similarities = data["similarities"]
+    ranking = data["ranking"]
+    docs = data["documents"]
+
+    best_idx = ranking[0]
+    best_score = similarities[best_idx]
+
+    if best_score <= 0:
+
+        st.warning(
+            "No encontramos coincidencias entre las palabras "
+            "de tu pregunta y los documentos. Prueba con otros "
+            "términos o revisa la base de conocimiento."
         )
 
     else:
 
-        # ==================================================
-        # CREAR VECTORIZADOR TF-IDF
-        # ==================================================
-
-        vectorizer = TfidfVectorizer(
-            tokenizer=tokenize_and_stem,
-            token_pattern=None,
-            min_df=1
-        )
-
-
-        # ==================================================
-        # CREAR MATRIZ TF-IDF
-        # ==================================================
-
-        X = vectorizer.fit_transform(
-            documents
-        )
-
-
-        # ==================================================
-        # TRANSFORMAR LA PREGUNTA
-        # ==================================================
-
-        question_vec = vectorizer.transform(
-            [question]
-        )
-
-
-        # ==================================================
-        # SIMILITUD COSENO
-        # ==================================================
-
-        similarities = cosine_similarity(
-            question_vec,
-            X
-        ).flatten()
-
-
-        # ==================================================
-        # DOCUMENTO MÁS RELEVANTE
-        # ==================================================
-
-        best_idx = similarities.argmax()
-
-        best_doc = documents[best_idx]
-
-        best_score = similarities[best_idx]
-
-
-        # ==================================================
-        # RESULTADO
-        # ==================================================
-
         st.markdown(
-            '<div class="resultado">',
+            f"""
+            <div class="result-card">
+                <h3>🏆 Documento más relacionado</h3>
+                <p><strong>Documento {best_idx + 1}</strong></p>
+                <p>{docs[best_idx]}</p>
+            </div>
+            """,
             unsafe_allow_html=True
         )
 
-        st.markdown(
-            '<div class="resultado-titulo">'
-            '🎯 Resultado más relevante'
-            '</div>',
-            unsafe_allow_html=True
-        )
+        met1, met2, met3 = st.columns(3)
 
-        st.write("")
-
-        st.write(
-            f"**Tu pregunta:** {question}"
-        )
-
-        st.write(
-            f"**Documento seleccionado:** Documento {best_idx + 1}"
-        )
-
-        st.success(
-            best_doc
-        )
-
-        col1, col2 = st.columns(2)
-
-
-        with col1:
-
+        with met1:
             st.metric(
-                "📈 Similitud",
+                "📈 Similitud coseno",
                 f"{best_score:.3f}"
             )
 
-
-        with col2:
-
+        with met2:
             st.metric(
-                "📊 Relevancia",
+                "📊 Similitud relativa",
                 f"{best_score * 100:.1f}%"
             )
 
+        with met3:
+            st.metric(
+                "📚 Documentos comparados",
+                len(docs)
+            )
 
-        st.markdown(
-            '</div>',
-            unsafe_allow_html=True
-        )
+    # ------------------------------------------------------
+    # PESTAÑAS DE ANÁLISIS
+    # ------------------------------------------------------
 
+    tab1, tab2, tab3 = st.tabs([
+        "📊 Ranking",
+        "🔢 Matriz TF-IDF",
+        "✂️ Stemming"
+    ])
 
-        # ==================================================
-        # TABS DE ANÁLISIS
-        # ==================================================
+    # ======================================================
+    # RANKING
+    # ======================================================
 
-        tab1, tab2, tab3 = st.tabs([
-            "📊 Ranking",
-            "🔢 Matriz TF-IDF",
-            "✂️ Stemming"
+    with tab1:
+
+        st.subheader("Documentos ordenados por similitud")
+
+        ranking_df = pd.DataFrame([
+            {
+                "Posición": posicion + 1,
+                "Documento": f"Documento {idx + 1}",
+                "Contenido": docs[idx],
+                "Similitud": similarities[idx],
+                "Similitud (%)": similarities[idx] * 100
+            }
+            for posicion, idx in enumerate(ranking)
         ])
 
+        ranking_df["Similitud"] = ranking_df["Similitud"].round(3)
+        ranking_df["Similitud (%)"] = (
+            ranking_df["Similitud (%)"].round(1)
+        )
 
-        # ==================================================
-        # RANKING
-        # ==================================================
+        st.dataframe(
+            ranking_df,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Similitud": st.column_config.NumberColumn(
+                    format="%.3f"
+                ),
+                "Similitud (%)": st.column_config.ProgressColumn(
+                    min_value=0,
+                    max_value=100,
+                    format="%.1f%%"
+                )
+            }
+        )
 
-        with tab1:
+        st.caption(
+            "Una similitud de cero significa que la consulta "
+            "no comparte características léxicas ponderadas "
+            "con el documento en este modelo."
+        )
 
-            st.markdown(
-                "### 📈 Documentos ordenados por relevancia"
-            )
+    # ======================================================
+    # MATRIZ TF-IDF
+    # ======================================================
 
-            sim_df = pd.DataFrame({
+    with tab2:
 
-                "Documento": [
-                    f"Documento {i + 1}"
-                    for i in range(len(documents))
-                ],
+        st.subheader("Matriz TF-IDF")
 
-                "Texto": documents,
+        st.write(
+            "Cada fila representa un documento y cada columna "
+            "representa un término procesado. Los valores indican "
+            "el peso TF-IDF de cada término."
+        )
 
-                "Similitud": similarities
+        vocab = data["vocabulary"]
+        matriz = data["matrix"]
 
-            })
-
-
-            sim_df = sim_df.sort_values(
-                "Similitud",
-                ascending=False
-            )
-
-
-            sim_df["Similitud"] = sim_df[
-                "Similitud"
-            ].round(3)
-
-
-            sim_df["Relevancia (%)"] = (
-                sim_df["Similitud"] * 100
-            ).round(1)
-
-
-            st.dataframe(
-                sim_df,
-                use_container_width=True,
-                hide_index=True
-            )
-
-
-        # ==================================================
-        # MATRIZ TF-IDF
-        # ==================================================
-
-        with tab2:
-
-            st.markdown(
-                "### 🔢 Matriz TF-IDF"
-            )
-
-            st.write(
-                "Cada fila representa un documento y cada columna "
-                "representa una palabra procesada."
-            )
-
-
+        if vocab:
             df_tfidf = pd.DataFrame(
-
-                X.toarray(),
-
-                columns=vectorizer.get_feature_names_out(),
-
+                matriz,
+                columns=vocab,
                 index=[
-                    f"Doc {i + 1}"
-                    for i in range(len(documents))
+                    f"Documento {i + 1}"
+                    for i in range(len(docs))
                 ]
-
             )
-
 
             st.dataframe(
                 df_tfidf.round(3),
                 use_container_width=True
             )
 
-
-        # ==================================================
-        # STEMMING
-        # ==================================================
-
-        with tab3:
-
-            st.markdown(
-                "### ✂️ Palabras procesadas"
+            st.download_button(
+                "⬇️ Descargar matriz CSV",
+                data=df_tfidf.to_csv().encode("utf-8-sig"),
+                file_name="matriz_tfidf.csv",
+                mime="text/csv"
             )
 
-            st.write(
-                "El stemming transforma las palabras a una forma "
-                "reducida para facilitar la comparación."
+        else:
+            st.info("No hay términos para mostrar.")
+
+    # ======================================================
+    # STEMMING
+    # ======================================================
+
+    with tab3:
+
+        st.subheader("Análisis de palabras")
+
+        q_stems = tokenize_and_stem(data["question"])
+
+        st.markdown("**Palabras procesadas de la pregunta**")
+
+        st.write(q_stems)
+
+        vocabulario = set(data["vocabulary"])
+
+        st.markdown("**Términos de la pregunta presentes en el vocabulario**")
+
+        coincidencias = [
+            stem for stem in q_stems
+            if stem in vocabulario
+        ]
+
+        if coincidencias:
+            st.write(coincidencias)
+        else:
+            st.info(
+                "Ningún término procesado de la pregunta aparece "
+                "en el vocabulario de los documentos."
             )
 
+        st.markdown("**Comparación con el documento más relevante**")
 
-            # Stems de la pregunta
+        if best_score > 0:
 
-            q_stems = tokenize_and_stem(
-                question
-            )
+            pesos = data["matrix"][best_idx]
 
+            terminos_documento = {
+                termino
+                for termino, peso in zip(vocab, pesos)
+                if peso > 0
+            }
 
-            # Vocabulario
-
-            vocab = (
-                vectorizer
-                .get_feature_names_out()
-            )
-
-
-            # Stems que aparecen en el documento elegido
-
-            matched = [
-
-                stem
-
-                for stem in q_stems
-
-                if (
-                    stem in vocab
-                    and df_tfidf.iloc[
-                        best_idx
-                    ].get(stem, 0) > 0
-                )
-
+            coincidencias_doc = [
+                stem for stem in q_stems
+                if stem in terminos_documento
             ]
 
+            st.write(coincidencias_doc)
 
+        else:
             st.write(
-                "**Stems de la pregunta:**"
+                "No hay coincidencias ponderadas con el documento "
+                "más relevante."
             )
 
-            st.write(
-                q_stems
-            )
+    # ======================================================
+    # EXPLICACIÓN
+    # ======================================================
 
+    with st.expander("🧠 ¿Cómo funciona esta búsqueda?"):
 
-            st.write(
-                "**Stems encontrados en el documento seleccionado:**"
-            )
+        st.markdown("""
+        **1. Tokenización:** el texto se separa en palabras.
 
-            st.write(
-                matched
-            )
+        **2. Stemming:** las palabras se reducen a raíces
+        aproximadas para comparar formas relacionadas.
 
+        **3. TF-IDF:** se calcula un peso para cada término
+        según su presencia en los documentos y su frecuencia
+        en la colección.
 
-        # ==================================================
-        # INFORMACIÓN DEL PROCESO
-        # ==================================================
+        **4. Vectorización:** la pregunta se convierte en un
+        vector utilizando el vocabulario de los documentos.
 
-        with st.expander(
-            "🧠 Ver cómo se realizó la búsqueda"
-        ):
+        **5. Similitud coseno:** se compara el vector de la
+        pregunta con cada vector documental.
 
-            st.write("""
-            **1. Tokenización**
+        **6. Ranking:** se ordenan los documentos de mayor
+        a menor similitud.
 
-            El texto se divide en palabras.
-
-            **2. Stemming**
-
-            Las palabras se reducen a una forma básica.
-
-            **3. TF-IDF**
-
-            Cada documento se convierte en un vector numérico.
-
-            **4. Vectorización de la pregunta**
-
-            La pregunta se transforma utilizando el mismo vocabulario.
-
-            **5. Similitud coseno**
-
-            Se compara la pregunta con cada documento.
-
-            **6. Ranking**
-
-            Los documentos se ordenan según su similitud.
-
-            **7. Resultado**
-
-            Se selecciona el documento con mayor similitud.
-            """)
+        **Importante:** TF-IDF compara características léxicas.
+        No comprende el significado como un modelo semántico
+        avanzado, por lo que una pregunta formulada con palabras
+        distintas a las del documento puede obtener una similitud
+        baja o igual a cero.
+        """)
 
 
 # ==========================================================
-# FOOTER
+# PIE DE PÁGINA
 # ==========================================================
 
 st.markdown("""
 <div class="footer">
-
-🔎 <strong>TF-IDF Search</strong><br>
-
-Búsqueda de información mediante procesamiento de lenguaje natural.
-
+    <strong>🍊 NARANJA Search</strong>
+    <p>Explora información. Encuentra conexiones. Aprende con datos.</p>
+    <small>Procesamiento de Lenguaje Natural · TF-IDF</small>
 </div>
 """, unsafe_allow_html=True)
